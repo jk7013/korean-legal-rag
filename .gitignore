@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+results/
+*.log
+
+# 내부용 문서 (GitHub 비공개)
+CLAUDE.md
+INTERVIEW.md
+docs/EXPERIMENT_UPDATE_v2.md
