@@ -346,6 +346,153 @@ def plot_llm_comparison(summary_gpt: pd.DataFrame, summary_o4: pd.DataFrame, fil
 
 
 # -------------------------------------------------------------------
+# 에세이 Judge 데이터 로드
+# -------------------------------------------------------------------
+def load_essay_results() -> pd.DataFrame:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT setting, model_name,
+                       AVG(judge_legal_accuracy)    AS legal_acc,
+                       AVG(judge_reasoning_quality) AS reasoning_q,
+                       AVG(judge_citation_fidelity) AS citation_f,
+                       AVG(judge_total)             AS avg_total,
+                       COUNT(*)                     AS n
+                FROM essay_results
+                GROUP BY setting, model_name
+                ORDER BY CASE setting WHEN 'vanilla' THEN 1 WHEN 'oracle' THEN 2 ELSE 3 END
+            """)
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def load_error_analysis() -> pd.DataFrame:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT error_type, COUNT(*) AS cnt
+                FROM error_analysis
+                GROUP BY error_type
+                ORDER BY cnt DESC
+            """)
+            rows = cur.fetchall()
+    return pd.DataFrame(rows, columns=["error_type", "cnt"])
+
+
+# -------------------------------------------------------------------
+# 에세이 Judge 시각화
+# -------------------------------------------------------------------
+def plot_essay_judge(essay_df: pd.DataFrame, filename: str):
+    """fig6: 세팅별 에세이 Judge 점수 (3가지 기준 그룹 막대)"""
+    metrics = ["legal_acc", "reasoning_q", "citation_f"]
+    metric_names = ["Legal Accuracy", "Reasoning Quality", "Citation Fidelity"]
+
+    # 세팅 레이블
+    def _essay_label(row):
+        if row["setting"] == "vanilla":
+            return "Vanilla"
+        if row["setting"] == "oracle":
+            return "Oracle"
+        return f"Retrieved/{row['model_name']}"
+
+    essay_df = essay_df.copy()
+    essay_df["label"] = essay_df.apply(_essay_label, axis=1)
+
+    setting_colors = {
+        "Vanilla": "#9E9E9E",
+        "Oracle": "#4CAF50",
+    }
+    for label in essay_df["label"]:
+        if label not in setting_colors:
+            setting_colors[label] = "#F44336"
+
+    labels = essay_df["label"].tolist()
+    n_settings = len(labels)
+    n_metrics = len(metrics)
+    x = range(n_metrics)
+    width = 0.22
+    offsets = [(i - (n_settings - 1) / 2) * width for i in range(n_settings)]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, (_, row) in enumerate(essay_df.iterrows()):
+        vals = [float(row[m]) for m in metrics]
+        color = setting_colors.get(row["label"], "#607D8B")
+        bars = ax.bar(
+            [xi + offsets[i] for xi in x],
+            vals,
+            width=width,
+            label=row["label"],
+            color=color,
+            edgecolor="white",
+        )
+        for bar, val in zip(bars, vals):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.04,
+                f"{val:.2f}",
+                ha="center", va="bottom", fontsize=9, fontweight="bold",
+            )
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(metric_names, fontsize=11)
+    ax.set_ylim(1, 5.5)
+    ax.set_ylabel("Judge 점수 (1~5점)", fontsize=12)
+    ax.set_title("KCL-Essay LLM-as-a-Judge 세팅별 점수 비교", fontsize=13, fontweight="bold", pad=12)
+    ax.legend(fontsize=10)
+    ax.grid(axis="y", alpha=0.3)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    plt.tight_layout()
+    out = os.path.join(OUTPUT_DIR, filename)
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"  저장: {out}")
+
+
+def plot_error_analysis(error_df: pd.DataFrame, filename: str):
+    """fig7: 오답 유형 분류 (수평 막대 + 비율 표시)"""
+    total = error_df["cnt"].sum()
+    error_df = error_df.copy()
+    error_df["ratio"] = error_df["cnt"] / total * 100
+
+    # 색상 매핑
+    color_map = {
+        "Misinterpretation": "#EF5350",
+        "Distraction": "#FF9800",
+        "Noise Dominance": "#42A5F5",
+        "Irrelevant": "#66BB6A",
+    }
+    colors = [color_map.get(t, "#90A4AE") for t in error_df["error_type"]]
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    bars = ax.barh(error_df["error_type"], error_df["cnt"], color=colors, edgecolor="white", height=0.5)
+
+    for bar, (_, row) in zip(bars, error_df.iterrows()):
+        ax.text(
+            bar.get_width() + 0.5,
+            bar.get_y() + bar.get_height() / 2,
+            f"{int(row['cnt'])}개  ({row['ratio']:.1f}%)",
+            va="center", fontsize=11, fontweight="bold",
+        )
+
+    ax.set_xlim(0, error_df["cnt"].max() * 1.45)
+    ax.set_xlabel("케이스 수", fontsize=12)
+    ax.set_title(
+        f"o4-mini+bge-m3 오답 유형 분류  (Recall@5=True, correct=False, n={total})",
+        fontsize=12, fontweight="bold", pad=12,
+    )
+    ax.grid(axis="x", alpha=0.3)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    plt.tight_layout()
+    out = os.path.join(OUTPUT_DIR, filename)
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"  저장: {out}")
+
+
+# -------------------------------------------------------------------
 # 메인
 # -------------------------------------------------------------------
 def main():
@@ -392,6 +539,15 @@ def main():
     plot_subject_accuracy(subj_gpt, "fig4_subject_accuracy_gpt4omini.png",
                           f"과목별 Accuracy [{GPT}]")
     plot_llm_comparison(summary_gpt, summary_o4, "fig5_llm_comparison.png")
+
+    # --- 에세이 Judge + 오답 분류 그래프 ---
+    essay_df = load_essay_results()
+    error_df = load_error_analysis()
+
+    if not essay_df.empty:
+        plot_essay_judge(essay_df, "fig6_essay_judge_scores.png")
+    if not error_df.empty:
+        plot_error_analysis(error_df, "fig7_error_type_analysis.png")
 
     print(f"\n완료. 그래프 저장 위치: {OUTPUT_DIR}/")
 
