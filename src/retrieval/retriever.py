@@ -10,12 +10,14 @@ from src.db.client import get_connection
 from src.embeddings.encoder import encode, get_table_name
 
 
-def search(question: str, model_name: str, top_k: int = 5) -> list[dict]:
+def search(question: str, model_name: str, top_k: int = 5, table: str = None) -> list[dict]:
     """
     질문 텍스트로 판례 벡터 검색
+    table: 검색할 테이블 (None이면 model_name 기본 테이블 사용)
     반환: [{"precedent_id": ..., "content": ..., "question_id": ..., "similarity": ...}, ...]
     """
-    table = get_table_name(model_name)
+    if table is None:
+        table = get_table_name(model_name)
     query_vec = encode(question, model_name)
 
     with get_connection() as conn:

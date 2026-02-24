@@ -360,7 +360,8 @@ def load_essay_results() -> pd.DataFrame:
                        COUNT(*)                     AS n
                 FROM essay_results
                 GROUP BY setting, model_name
-                ORDER BY CASE setting WHEN 'vanilla' THEN 1 WHEN 'oracle' THEN 2 ELSE 3 END
+                ORDER BY CASE setting WHEN 'vanilla' THEN 1 WHEN 'oracle' THEN 2 ELSE 3 END,
+                         model_name
             """)
             rows = cur.fetchall()
             cols = [d[0] for d in cur.description]
@@ -402,19 +403,21 @@ def plot_essay_judge(essay_df: pd.DataFrame, filename: str):
     setting_colors = {
         "Vanilla": "#9E9E9E",
         "Oracle": "#4CAF50",
+        "Retrieved/bge-m3": "#EF9A9A",         # 구버전 (MCQA 코퍼스) — 연한 빨강
+        "Retrieved/essay-bge-m3": "#F44336",   # 신버전 (에세이 전용 코퍼스) — 진한 빨강
     }
     for label in essay_df["label"]:
         if label not in setting_colors:
-            setting_colors[label] = "#F44336"
+            setting_colors[label] = "#607D8B"
 
     labels = essay_df["label"].tolist()
     n_settings = len(labels)
     n_metrics = len(metrics)
     x = range(n_metrics)
-    width = 0.22
+    width = 0.19
     offsets = [(i - (n_settings - 1) / 2) * width for i in range(n_settings)]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(11, 5))
     for i, (_, row) in enumerate(essay_df.iterrows()):
         vals = [float(row[m]) for m in metrics]
         color = setting_colors.get(row["label"], "#607D8B")

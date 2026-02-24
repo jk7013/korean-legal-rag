@@ -31,6 +31,17 @@ CREATE TABLE IF NOT EXISTS precedents_openai (
     embedding       VECTOR(1536)
 );
 
+-- 에세이 전용 판례: bge-m3 1024dim
+-- kcl_essay 데이터셋 판례, 중복 제거, 120,000자 절단 (청킹 없음)
+CREATE TABLE IF NOT EXISTS precedents_essay_bge_m3 (
+    id           SERIAL PRIMARY KEY,
+    precedent_id TEXT NOT NULL UNIQUE,  -- 판례 고유 ID (예: "대법원 2018다24349")
+    question_id  TEXT,                  -- 최초 등장 문제의 meta
+    subject      TEXT,
+    content      TEXT NOT NULL,
+    embedding    VECTOR(1024)
+);
+
 -- 문제 테이블
 CREATE TABLE IF NOT EXISTS questions (
     id                  SERIAL PRIMARY KEY,
