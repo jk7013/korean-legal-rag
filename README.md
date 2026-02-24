@@ -1,9 +1,13 @@
 # Korean Legal RAG — Oracle vs Retrieved 성능 갭 측정
 
-한국 변호사시험(KCL-MCQA, 283문제)을 기반으로, **법률 RAG 시스템에서 "검색 품질"이 최종 정답률에 얼마나 영향을 미치는지** 정량적으로 측정한 실험 프로젝트.
-
 > 기반 논문: *Korean Canonical Legal Benchmark* (EACL 2026) — [arXiv](https://arxiv.org/abs/2512.24572) · [HuggingFace Dataset](https://huggingface.co/datasets/lbox/kcl)
-> 논문은 "정답 판례를 직접 주입(Oracle)"했을 때만 측정. 이 프로젝트는 **실제 서비스 환경인 Retrieved RAG를 추가**해 두 세팅의 갭을 수치로 확인함.
+
+## Summary
+
+EACL 2026 논문이 측정하지 않은 **Retrieved RAG vs Oracle 성능 갭**을 한국 변호사시험(KCL, 283문제)으로 실측.
+검색 모델(ko-sroberta / bge-m3 / OpenAI), 검색 전략(Dense / HyDE / Hybrid), LLM(GPT-4o-mini / o4-mini) 조합을 비교하고, 에세이 태스크 LLM-as-a-Judge와 오답 유형 분류까지 수행.
+핵심 발견: **검색 품질이 낮으면 RAG가 없는 것보다 나빠지며**, Reasoning 모델(o4-mini)은 Oracle에서 73.1%로 압도적이지만 노이즈 판례에 더 민감하게 반응해 Hybrid에서 오히려 역효과가 발생.
+오답 유형 분류(LLM-as-a-Judge) 결과 실패 원인의 54.7%가 Misinterpretation, Noise Dominance 0% — 리랭킹보다 법률 도메인 특화 파인튜닝이 다음 병목.
 
 ---
 
