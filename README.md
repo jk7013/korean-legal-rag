@@ -1,156 +1,135 @@
-# korean-legal-rag: Oracle RAG vs Retrieved RAG 성능 갭 측정
+# Korean Legal RAG — Oracle vs Retrieved 성능 갭 측정
 
-한국 변호사 시험(KCL-MCQA) 데이터셋을 활용하여 **법률 RAG 시스템의 검색 품질이 최종 성능에 미치는 영향**을 정량적으로 측정한 실험 프로젝트.
+한국 변호사시험(KCL-MCQA, 283문제)을 기반으로, **법률 RAG 시스템에서 "검색 품질"이 최종 정답률에 얼마나 영향을 미치는지** 정량적으로 측정한 실험 프로젝트.
 
-논문(*Korean Canonical Legal Benchmark*, EACL 2026)은 정답 판례를 직접 주입한 Oracle 세팅만 측정했음. 이 프로젝트는 **논문이 측정하지 않은 공백**인 실제 서비스 환경의 Retrieved RAG 세팅을 추가하여, Oracle과 Retrieved 사이의 갭을 수치로 측정하고 검색 전략별 개선 효과를 비교함.
+> 기반 논문: *Korean Canonical Legal Benchmark* (EACL 2026) — [arXiv](https://arxiv.org/abs/2512.24572) · [HuggingFace Dataset](https://huggingface.co/datasets/lbox/kcl)
+> 논문은 "정답 판례를 직접 주입(Oracle)"했을 때만 측정. 이 프로젝트는 **실제 서비스 환경인 Retrieved RAG를 추가**해 두 세팅의 갭을 수치로 확인함.
 
 ---
 
 ## 실험 구조
 
 ```
-Vanilla          →         Oracle          →      Retrieved RAG
-판례 없이 LLM만        정답 판례 직접 주입         벡터 검색으로 판례 찾아서 주입
-(성능 하한)            (성능 상한)                (실제 서비스 상황)
+Vanilla             Oracle              Retrieved RAG
+────────────        ────────────        ────────────────────
+판례 없이            정답 판례을          벡터 검색으로
+LLM만으로 풀기        직접 주입            판례를 찾아서 주입
+
+(성능 하한)          (논문이 측정)         (이 프로젝트가 추가)
+                    (성능 상한)          (실제 서비스 상황)
 ```
 
-**핵심 질문**: 검색 품질이 얼마나 성능을 제한하는가? 그리고 어떻게 개선할 수 있는가?
-
-**측정 지표**:
-- Accuracy: 최종 답안 정확도 (LLM 추론 능력 반영)
-- Recall@k: 상위 k개 검색 결과 내 정답 판례 포함률 (검색 품질 반영)
+**핵심 질문**: 검색 품질(Recall@k)이 최종 Accuracy를 얼마나 제한하는가?
+**측정 지표**: Accuracy (정답률) · Recall@1/3/5 (검색 품질)
 
 ---
 
-## 최종 결과
+## 주요 결과
 
-### LLM별 전체 Accuracy
+### 1. 전체 Accuracy — GPT-4o-mini
 
-#### GPT-4o-mini (Baseline)
+![Accuracy bar](results/fig1_accuracy_bar_gpt4omini.png)
 
-| Setting | Embedding Model | Accuracy | Recall@1 | Recall@3 | Recall@5 |
-|---------|-----------------|:--------:|:--------:|:--------:|:--------:|
-| Vanilla | - | 30.7% | - | - | - |
-| Oracle | - | **44.2%** | - | - | - |
-| Retrieved | ko-sroberta | 28.3% | 13.8% | 21.2% | 26.5% |
-| Retrieved | bge-m3 | **32.2%** | 31.8% | 46.3% | 50.9% |
-| Retrieved | openai | 29.3% | 15.5% | 21.6% | 24.0% |
-| HyDE | bge-m3 | 29.0% | 34.6% | 49.8% | 53.0% |
-| Hybrid | bge-m3 | **32.9%** | 32.5% | **53.7%** | **67.1%** |
+| Setting | Embedding | Accuracy | Recall@5 |
+|---------|-----------|:--------:|:--------:|
+| Vanilla | — | 30.7% | — |
+| Oracle | — | **44.2%** | — |
+| Retrieved | ko-sroberta | 28.3% | 26.5% |
+| Retrieved | **bge-m3** | **32.2%** | 50.9% |
+| Retrieved | openai | 29.3% | 24.0% |
+| HyDE | bge-m3 | 29.0% | 53.0% |
+| Hybrid (BM25+벡터) | bge-m3 | **32.9%** | **67.1%** |
 
-#### o4-mini (Reasoning Model)
-
-| Setting | Embedding Model | Accuracy | Recall@1 | Recall@3 | Recall@5 |
-|---------|-----------------|:--------:|:--------:|:--------:|:--------:|
-| Vanilla | - | 35.0% | - | - | - |
-| Oracle | - | **73.1%** | - | - | - |
-| Retrieved | bge-m3 | **45.9%** | 31.8% | 46.3% | 50.9% |
-| Hybrid | bge-m3 | 44.9% | 32.5% | **53.7%** | **67.1%** |
-
-- 총 283문제 / 랜덤 기댓값: 20%
-
-### GPT-4o-mini 과목별 Accuracy
-
-| Setting | 모델 | 민사법 (133문제) | 형사법 (75문제) | 공법 (75문제) |
-|---------|------|:---------------:|:--------------:|:------------:|
-| Vanilla | - | 33.1% | 30.7% | 26.7% |
-| Oracle | - | **47.4%** | 40.0% | 42.7% |
-| Retrieved | ko-sroberta | 30.8% | 28.0% | 24.0% |
-| Retrieved | bge-m3 | 32.3% | **33.3%** | 30.7% |
-| Retrieved | openai | 29.3% | 30.7% | 28.0% |
-| HyDE | bge-m3 | 30.1% | 30.7% | 25.3% |
-| Hybrid | bge-m3 | **35.3%** | 32.0% | 29.3% |
+- **bge-m3만 Vanilla를 초과** — 검색 품질이 낮으면(ko-sroberta, openai) 아무것도 안 넣는 것보다 낮아짐
+- **Oracle 갭 11.3%p** — 검색이 병목. 아무리 좋은 LLM도 검색이 뒷받침되지 않으면 Oracle에 못 미침
 
 ---
 
-## 핵심 인사이트
+### 2. GPT-4o-mini vs o4-mini — Reasoning 모델의 역설
 
-**1. 법률 RAG의 두 가지 독립적 병목: 검색과 추론**
+![LLM comparison](results/fig5_llm_comparison.png)
 
-검색과 추론은 별개로 작동하며, 어느 하나만 개선해서는 한계가 있음.
+| Setting | GPT-4o-mini | o4-mini | 차이 |
+|---------|:-----------:|:-------:|:----:|
+| Vanilla | 30.7% | 35.0% | +4.3%p |
+| Oracle | 44.2% | **73.1%** | **+28.9%p** |
+| Retrieved/bge-m3 | 32.2% | **45.9%** | +13.7%p |
+| Hybrid | 32.9% | 44.9% | +12.0%p |
 
-- Vanilla: gpt-4o-mini 30.7% vs o4-mini 35.0% (+4.3%p, 거의 차이 없음)
-- Oracle: gpt-4o-mini 44.2% vs o4-mini **73.1%** (+28.9%p, 압도적 차이)
-- Retrieved/bge-m3: gpt-4o-mini 32.2% vs o4-mini **45.9%** (+13.7%p)
+- **Vanilla에선 두 모델이 거의 비슷**하지만, Oracle에선 폭발적으로 벌어짐
+- Reasoning 모델의 강점은 "판례를 보고 법적 논리를 따라가는 것" — 판례가 없으면 차이가 없음
+- **o4-mini Retrieved(45.9%) > GPT-4o-mini Oracle(44.2%)** — 불완전한 검색으로도 일반 모델의 이상적 조건을 초과
 
-결론: Reasoning 모델의 진가는 판례 컨텍스트를 받았을 때 드러남. 판례가 없을 때는 두 모델이 비슷하지만, 판례를 주면 활용 능력의 차이가 폭발적으로 벌어짐.
-
-**특이점:** o4-mini Retrieved(45.9%) > gpt-4o-mini Oracle(44.2%) — Reasoning 모델은 불완전한 검색으로도 일반 모델의 이상적 조건을 뛰어넘음.
-
-**2. 법률 도메인에서 임베딩 모델 선택의 역설**
-
-한국어 특화 모델이 범용 다국어 모델에 뒤진다는 반직관적 결과.
-
-- bge-m3(Recall@5=50.9%)만 Vanilla를 초과(32.2%)
-- ko-sroberta(Recall@5=26.5%)와 openai(Recall@5=24.0%)는 Vanilla보다 낮음
-
-틀린 판례가 컨텍스트에 들어갈 경우 오히려 성능이 저하되는 **노이즈 인젝션** 현상 발생. 임베딩 모델 선택이 법률 RAG 시스템의 성패를 결정하는 핵심 변수.
-
-**3. Oracle vs Retrieved 갭 — Reasoning 모델일수록 검색 품질에 더 민감**
-
-- gpt-4o-mini: Oracle(44.2%) - Retrieved/bge-m3(32.2%) = **12.0%p**
-- o4-mini: Oracle(73.1%) - Retrieved/bge-m3(45.9%) = **27.2%p**
-
-모델 성능이 높을수록 검색 품질의 영향이 더 크게 증폭됨. 정답 판례를 주면 최대한 활용하지만, 틀린 판례가 들어오면 깊은 추론이 오히려 오답 확신으로 이어짐.
-
-**4. HyDE: Recall 개선, Accuracy 하락 — 검색 품질과 컨텍스트 품질은 별개**
-
-- Recall@5: 50.9% → 53.0% (+2.1%p 개선)
-- Accuracy: 32.2% → 29.0% (-3.2%p 하락)
-
-HyDE가 생성한 가상 판례가 더 관련 있는 판례를 찾는 데는 도움이 되지만(Recall↑), 가상 판례 자체의 법적 논리가 LLM을 잘못된 방향으로 유도하는 부작용 발생(Accuracy↓). "어떤 판례를 찾느냐"보다 "찾은 판례를 어떻게 활용하느냐"가 더 중요함.
-
-**5. Hybrid(벡터 + BM25 + RRF): Recall은 대폭 개선, Accuracy 효과는 LLM에 따라 비대칭**
-
-- Recall@5: 50.9% → **67.1%** (+16.2%p 대폭 향상)
-- gpt-4o-mini Accuracy: 32.2% → 32.9% (+0.7%p 소폭 향상)
-- o4-mini Accuracy: 45.9% → 44.9% (-1.0%p 오히려 하락)
-
-법률 용어는 의미적으로 유사한 단어가 없어 BM25 키워드 매칭이 벡터 검색의 공백을 효과적으로 보완함(Recall 향상). 그러나 BM25가 추가로 끌어온 판례가 노이즈로 작용할 경우, Reasoning 모델은 이를 더 깊이 처리해 역효과가 증폭됨. Recall 상한을 끌어올리는 데는 효과적이나, **리랭킹 없이는 Accuracy 개선이 제한적**.
-
-**6. 오답 분류(LLM-as-a-Judge): 추론 실패의 원인은 리랭킹으로 해결 불가**
-
-o4-mini 기준 Recall@5=True인데 오답인 64개를 gpt-4o-mini가 4가지 유형으로 분류:
-
-| 유형 | 건수 | 비율 | 설명 |
-|------|------|------|------|
-| Misinterpretation | 35 | 54.7% | 정답 판례를 읽었지만 법적 해석을 잘못함 |
-| Distraction | 29 | 45.3% | 유사 선택지 트랩에 걸려 판례 적용 실패 |
-| Noise Dominance | 0 | 0% | — |
-| Irrelevant | 0 | 0% | — |
-
-**핵심 시사점**: Noise Dominance = 0% → 판례 순위 문제가 아닌 추론 실패가 본질. Cross-Encoder 리랭킹으로 정답 판례를 top-1으로 올려도 Misinterpretation(54.7%)은 해결되지 않음. 법률 도메인 파인튜닝 또는 더 강한 추론 모델이 필요한 영역.
-
-추가 패턴:
-- 오답 거리 1(인접 선택지) 비율 48% — "그럴듯한 선택지" 사이의 판단 실패 (Distraction과 일치)
-- 5번 선택지 과소예측 — 정답이 5번인 16문제 중 7개만 5번으로 예측(44%), position bias 의심
+> **역설**: Hybrid(Recall@5=67.1%)에서 o4-mini는 오히려 -1.0%p 하락. Reasoning 모델은 BM25가 끌어온 노이즈 판례를 더 깊이 처리해 역효과가 증폭됨.
 
 ---
 
-## 에세이 평가 (KCL-Essay LLM-as-a-Judge)
+### 3. 검색 전략별 Recall@k
 
-MCQA 외에 서술형 에세이 태스크(KCL-Essay, 169문제)에서도 3가지 세팅의 성능 차이를 측정함.
-gpt-4o-mini가 에세이를 생성하고, 동일한 gpt-4o-mini Judge가 3가지 기준(1~5점)으로 채점.
+![Recall@k](results/fig3_recall_at_k_gpt4omini.png)
 
-| Setting | N | Legal Accuracy | Reasoning Quality | Citation Fidelity | Avg |
-|---------|---|:--------------:|:-----------------:|:-----------------:|:---:|
-| Vanilla | 169 | 3.09 | 3.19 | 2.18 | **2.82** |
-| Oracle | 169 | 3.98 | 3.79 | 3.83 | **3.87** |
-| Retrieved/bge-m3 | 169 | 3.24 | 3.30 | 2.78 | **3.11** |
-
-**Oracle vs Vanilla: +1.05점** — 판례 주입이 에세이 품질을 전반적으로 끌어올리며, 특히 Citation Fidelity 격차가 가장 큼(+1.65). 판례가 없으면 LLM이 판례 인용 자체를 회피하거나 환각함.
-
-**Retrieved vs Oracle: -0.76점 갭** — MCQA용 벡터 인덱스에는 짧게 추출된 판례 스니펫만 저장돼 있어, 풀텍스트 Oracle 대비 Citation Fidelity 격차가 두드러짐(2.78 vs 3.83). MCQA Accuracy 갭 패턴과 동일하게, Essay에서도 검색 품질이 인용 충실도를 제한함.
+- **Hybrid(BM25+벡터+RRF)가 Recall@5=67.1%로 최고** — BM25가 벡터 검색이 놓친 판례를 키워드로 보완
+- **HyDE는 Recall@5=53.0%로 향상됐지만 Accuracy는 -3.2%p 하락** — 가상 판례의 잘못된 법적 논리가 LLM 추론을 오염
 
 ---
 
-## 다음 개선 방향
+### 4. Recall@5 vs Accuracy 상관관계
 
-| 우선순위 | 방향 | 근거 |
-|----------|------|------|
-| ★★★ | Cross-Encoder 리랭킹 | Hybrid Recall@5=67.1%를 Accuracy로 전환하는 핵심 |
-| ★★ | top_k 축소 실험 | 컨텍스트 희석 제거, Precision 극대화 |
-| ★★ | 프롬프트 개선 | Position bias 완화, 판례 출처 명시 유도 |
+![Recall vs Accuracy](results/fig2_recall_vs_accuracy_gpt4omini.png)
+
+검색 품질(x축)과 최종 정답률(y축)의 관계. Oracle은 그래프 밖(Recall=100%, Acc=44.2%)의 기준선.
+
+- Recall@5가 높을수록 Accuracy도 높지만, **HyDE는 예외** — Recall↑인데 Accuracy↓
+- Hybrid는 Recall@5=67%로 가장 높지만, Oracle(44.2%)과의 갭이 여전히 11%p 이상 남음
+- 이 갭을 좁히려면 **상위 k개 중 정답 판례를 1번으로 올리는 리랭킹**이 필요
+
+---
+
+### 5. 과목별 Accuracy — GPT-4o-mini
+
+![Subject heatmap](results/fig4_subject_accuracy_gpt4omini.png)
+
+- **공법에서 검색 효과가 가장 약함** — 헌법·행정법 판례는 추상적 법원칙이 많아 임베딩 유사도 매칭이 어려운 것으로 추정
+- **bge-m3는 형사법에서 33.3%로 가장 균형적** — 사실관계 중심 판례에서 의미 검색이 더 효과적
+
+---
+
+### 6. 에세이 평가 — KCL-Essay LLM-as-a-Judge (169문제)
+
+![Essay Judge](results/fig6_essay_judge_scores.png)
+
+5지선다(MCQA)와 다르게 정답이 없는 서술형 에세이에서도 동일한 세팅을 비교.
+gpt-4o-mini Judge가 3가지 기준(1~5점)으로 채점.
+
+| Setting | Legal Accuracy | Reasoning Quality | Citation Fidelity | **Avg** |
+|---------|:--------------:|:-----------------:|:-----------------:|:-------:|
+| Vanilla | 3.09 | 3.19 | 2.18 | **2.82** |
+| Oracle | 3.98 | 3.79 | 3.83 | **3.87** |
+| Retrieved/bge-m3 | 3.24 | 3.30 | 2.78 | **3.11** |
+
+- **Citation Fidelity 격차가 가장 큼** (Vanilla 2.18 → Oracle 3.83, +1.65점)
+  판례가 없으면 LLM이 판례를 지어내거나(환각) 인용 자체를 피함
+- Legal Accuracy·Reasoning Quality는 세팅 간 차이가 상대적으로 작음 — 법적 논리 구성 자체는 판례 유무와 무관하게 어느 정도 유지됨
+- **MCQA 패턴과 동일**: Oracle이 압도적으로 좋고, Retrieved는 중간
+
+---
+
+### 7. 오답 유형 분석 — LLM-as-a-Judge
+
+![Error analysis](results/fig7_error_type_analysis.png)
+
+o4-mini + bge-m3에서 **판례는 찾았는데 틀린 64개 케이스**를 gpt-4o-mini Judge가 분류.
+
+| 유형 | 건수 | 설명 |
+|------|:----:|------|
+| Misinterpretation | 35 (54.7%) | 정답 판례를 읽었지만 법적 해석을 잘못함 |
+| Distraction | 29 (45.3%) | 유사 선택지 트랩에 빠져 판례를 잘못 적용 |
+| Noise Dominance | 0 | — |
+| Irrelevant | 0 | — |
+
+**Noise Dominance = 0%의 의미**: 실패 원인이 "판례 순위 문제"가 아님.
+Cross-Encoder 리랭킹으로 정답 판례를 top-1으로 올려도 Misinterpretation(54.7%)은 해결되지 않음.
+→ 검색 파이프라인 개선의 한계를 데이터로 확인. 법률 도메인 특화 파인튜닝이 필요한 영역.
 
 ---
 
@@ -158,132 +137,14 @@ gpt-4o-mini가 에세이를 생성하고, 동일한 gpt-4o-mini Judge가 3가지
 
 | 역할 | 기술 |
 |------|------|
-| 벡터 DB | PostgreSQL 16 + pgvector |
+| 벡터 DB | PostgreSQL 16 + pgvector (IVFFlat, cosine) |
 | 컨테이너 | Docker (pgvector/pgvector:pg16) |
-| 임베딩 | ko-sroberta-multitask / BAAI/bge-m3 / text-embedding-3-small |
-| 키워드 검색 | BM25 (rank-bm25) |
-| 검색 결합 | RRF (Reciprocal Rank Fusion) |
-| LLM | GPT-4o-mini / o4-mini-2025-04-16 |
+| 임베딩 | ko-sroberta-multitask (768d) · BAAI/bge-m3 (1024d) · text-embedding-3-small (1536d) |
+| 키워드 검색 | BM25 (rank-bm25, 공백 토크나이저) |
+| 검색 결합 | RRF (Reciprocal Rank Fusion, k=60) |
+| LLM | gpt-4o-mini · o4-mini-2025-04-16 (`reasoning_effort="low"`) |
+| 데이터 | HuggingFace `lbox/kcl` (kcl_mcqa · kcl_essay) |
 | 언어 | Python 3.14 |
-| 데이터 | HuggingFace `lbox/kcl` (config: `kcl_mcqa`) |
-
----
-
-## 실행 방법
-
-### 환경 설정
-
-```bash
-# 패키지 설치
-pip install -r requirements.txt
-
-# .env 파일 작성
-cp .env.example .env  # OPENAI_API_KEY 설정
-```
-
-### 1. DB 초기화
-
-```bash
-# PostgreSQL + pgvector 실행
-docker-compose up -d
-
-# 스키마 생성 + 데이터 로드
-bash scripts/01_setup_db.sh
-```
-
-### 2. 판례 인덱싱
-
-```bash
-# 임베딩 모델별 순차 실행
-python scripts/02_index.py --model ko-sroberta
-python scripts/02_index.py --model bge-m3
-python scripts/02_index.py --model openai
-
-# IVFFlat 인덱스 생성
-python scripts/02_index.py --create-index
-```
-
-### 3. 실험 실행
-
-```bash
-# 세팅별 실행
-python scripts/03_run_experiments.py --setting vanilla
-python scripts/03_run_experiments.py --setting oracle
-python scripts/03_run_experiments.py --setting retrieved --model bge-m3
-python scripts/03_run_experiments.py --setting retrieved --model ko-sroberta
-python scripts/03_run_experiments.py --setting retrieved --model openai
-
-# o4-mini 실험 (--llm 옵션)
-python scripts/03_run_experiments.py --setting vanilla --llm o4-mini-2025-04-16
-python scripts/03_run_experiments.py --setting oracle --llm o4-mini-2025-04-16
-python scripts/03_run_experiments.py --setting retrieved --model bge-m3 --llm o4-mini-2025-04-16
-
-# HyDE 실험
-python src/evaluation/hyde.py --embed-model bge-m3 --llm gpt-4o-mini
-
-# Hybrid 실험 (벡터 + BM25 + RRF)
-python scripts/05_run_search_experiments.py --setting hybrid --model bge-m3 --llm gpt-4o-mini
-python scripts/05_run_search_experiments.py --setting hybrid --model bge-m3 --llm o4-mini-2025-04-16
-```
-
-> 중간에 끊겨도 안전하게 재실행 가능. 완료된 문제는 자동 스킵.
-
-### 4. 결과 분석
-
-```bash
-python scripts/04_analyze.py
-# → results/ 디렉토리에 그래프 5개 생성
-```
-
----
-
-## 폴더 구조
-
-```
-kcl-rag/
-├── docker-compose.yml
-├── requirements.txt
-├── src/
-│   ├── data/loader.py         # KCL 데이터셋 파싱 + DB 저장
-│   ├── db/
-│   │   ├── schema.sql         # 테이블 DDL
-│   │   └── client.py          # psycopg2 연결
-│   ├── embeddings/encoder.py  # 3종 임베딩 모델 통합 인터페이스
-│   ├── indexing/indexer.py    # 판례 벡터 인덱싱
-│   ├── retrieval/
-│   │   ├── retriever.py       # 벡터 검색 + Recall@k
-│   │   ├── hyde_retriever.py  # HyDE 가상 판례 생성 + 검색
-│   │   └── hybrid_retriever.py # BM25 + 벡터 + RRF 결합
-│   └── evaluation/
-│       ├── _common.py              # LLM 호출, 파싱, DB 저장 공통 유틸
-│       ├── vanilla.py
-│       ├── oracle.py
-│       ├── retrieved.py
-│       ├── hyde.py                 # HyDE RAG 평가
-│       ├── hybrid.py               # Hybrid RAG 평가
-│       ├── judge_error_analysis.py # 오답 유형 분류 (LLM-as-a-Judge)
-│       └── essay_judge.py          # 에세이 생성 + Judge 채점
-├── scripts/
-│   ├── 01_setup_db.sh
-│   ├── 02_index.py
-│   ├── 03_run_experiments.py
-│   ├── 04_analyze.py               # 결과 분석 + 시각화
-│   ├── 05_run_search_experiments.py # HyDE / Hybrid 실험
-│   ├── 06_judge_error_analysis.py  # 오답 분류 실행
-│   └── 07_run_essay_experiments.py # 에세이 Judge 실험 실행
-├── docs/
-│   └── ERROR_ANALYSIS.md           # 오답 분석 + 에세이 결과 리포트
-└── results/                        # 그래프 출력 디렉토리
-```
-
----
-
-## 데이터셋
-
-- **출처**: [lbox/kcl](https://huggingface.co/datasets/lbox/kcl) (HuggingFace)
-- **논문**: [Korean Canonical Legal Benchmark (arxiv)](https://arxiv.org/abs/2512.24572)
-- **규모**: MCQA 283문제 + 판례 1,103개
-- **판례 형태**: 판결문 전체가 아닌 질문별 핵심 부분만 추출된 텍스트 → 청킹 불필요
 
 ---
 
@@ -292,6 +153,87 @@ kcl-rag/
 | 문제 | 원인 | 해결 |
 |------|------|------|
 | bge-m3 OOM (`Invalid buffer size: 256GiB`) | `max_seq_length=8192`, 어텐션 행렬이 시퀀스 길이²에 비례 | `max_seq_length=512`, `batch_size=4`로 제한 |
-| OpenAI API 토큰 초과 (`requested 9346 tokens`) | 문자 수 기반 토큰 추정치 부정확 (0.62→실제 0.93) | `tiktoken`으로 실제 토큰 수 측정 후 8,000 이하로 자르기 |
-| GPT-4o-mini Rate Limit (`429 TPM exceeded`) | Oracle 세팅에서 긴 판례 컨텍스트로 TPM 초과 | 지수 백오프 재시도 (`wait *= 2`) |
-| o4-mini 응답 빈 문자열 (predicted=NULL) | `max_completion_tokens=500`으로 reasoning 토큰이 출력 토큰 소진 | `max_completion_tokens=5000` + `reasoning_effort="low"` (~7s/문제) |
+| OpenAI API 토큰 초과 | 문자 수 기반 토큰 추정 부정확 (한국어 0.62→실제 0.93 토큰/자) | `tiktoken`으로 실제 토큰 수 측정 후 8,000 이하로 절단 |
+| GPT-4o-mini Rate Limit | Oracle 세팅에서 긴 판례 컨텍스트로 TPM 초과 | 지수 백오프 재시도 (`wait *= 2`) |
+| o4-mini 응답 빈 문자열 | `max_completion_tokens=500`으로 reasoning 토큰이 출력 공간 소진 | `max_completion_tokens=5000` + `reasoning_effort="low"` |
+| Oracle 에세이 컨텍스트 길이 초과 | 판례 전문 평균 18K 토큰, 최대 130K 토큰 | `MAX_PRECEDENT_CHARS=120,000`으로 절단 |
+
+---
+
+## 실행 방법
+
+```bash
+# 1. 환경 설정
+pip install -r requirements.txt
+cp .env.example .env  # OPENAI_API_KEY 설정
+
+# 2. DB 초기화 (Docker + PostgreSQL + pgvector)
+docker-compose up -d
+bash scripts/01_setup_db.sh
+
+# 3. 판례 인덱싱
+python scripts/02_index.py --model bge-m3
+python scripts/02_index.py --create-index
+
+# 4. MCQA 실험 실행 (중간에 끊겨도 재실행 안전)
+python scripts/03_run_experiments.py --setting vanilla
+python scripts/03_run_experiments.py --setting oracle
+python scripts/03_run_experiments.py --setting retrieved --model bge-m3
+python scripts/03_run_experiments.py --setting retrieved --model bge-m3 --llm o4-mini-2025-04-16
+
+# 5. Hybrid 실험
+python scripts/05_run_search_experiments.py --setting hybrid --model bge-m3
+
+# 6. 에세이 Judge 실험
+python scripts/07_run_essay_experiments.py
+
+# 7. 오답 분류
+python scripts/06_judge_error_analysis.py
+
+# 8. 시각화 (results/ 에 fig1~fig7 생성)
+python scripts/04_analyze.py
+```
+
+---
+
+## 폴더 구조
+
+```
+kcl-rag/
+├── src/
+│   ├── data/loader.py              # HuggingFace KCL 데이터셋 파싱
+│   ├── db/
+│   │   ├── schema.sql              # 테이블 DDL
+│   │   └── client.py               # psycopg2 연결
+│   ├── embeddings/encoder.py       # 3종 임베딩 모델 통합 인터페이스
+│   ├── indexing/indexer.py         # 판례 벡터 인덱싱
+│   ├── retrieval/
+│   │   ├── retriever.py            # 벡터 검색 + Recall@k
+│   │   ├── hyde_retriever.py       # HyDE 가상 판례 생성 + 검색
+│   │   └── hybrid_retriever.py     # BM25 + 벡터 + RRF
+│   └── evaluation/
+│       ├── _common.py              # LLM 호출, 파싱, DB 저장 공통 유틸
+│       ├── vanilla.py / oracle.py / retrieved.py
+│       ├── hyde.py / hybrid.py
+│       ├── judge_error_analysis.py # 오답 유형 분류 (LLM-as-a-Judge)
+│       └── essay_judge.py          # 에세이 생성 + Judge 채점
+├── scripts/
+│   ├── 02_index.py                 # 인덱싱
+│   ├── 03_run_experiments.py       # MCQA 실험
+│   ├── 04_analyze.py               # 결과 분석 + 시각화 (fig1~fig7)
+│   ├── 05_run_search_experiments.py
+│   ├── 06_judge_error_analysis.py
+│   └── 07_run_essay_experiments.py
+├── results/                        # 생성된 그래프 (fig1~fig7)
+└── docs/
+    └── ERROR_ANALYSIS.md           # 상세 오답 분석 리포트
+```
+
+---
+
+## 데이터셋
+
+- **출처**: [lbox/kcl](https://huggingface.co/datasets/lbox/kcl) (HuggingFace)
+- **MCQA**: 283문제 + 판례 1,103개 (민사법 133 / 형사법 75 / 공법 75)
+- **Essay**: 169문제 + 2,739개 루브릭
+- **판례 형태**: 판결문 전체가 아닌 문제별 핵심 부분만 추출된 텍스트 → 청킹 불필요
