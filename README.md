@@ -108,12 +108,39 @@ HyDE가 생성한 가상 판례가 더 관련 있는 판례를 찾는 데는 도
 
 법률 용어는 의미적으로 유사한 단어가 없어 BM25 키워드 매칭이 벡터 검색의 공백을 효과적으로 보완함(Recall 향상). 그러나 BM25가 추가로 끌어온 판례가 노이즈로 작용할 경우, Reasoning 모델은 이를 더 깊이 처리해 역효과가 증폭됨. Recall 상한을 끌어올리는 데는 효과적이나, **리랭킹 없이는 Accuracy 개선이 제한적**.
 
-**6. 오답 분석: Recall 성공 후 추론 실패의 패턴**
+**6. 오답 분류(LLM-as-a-Judge): 추론 실패의 원인은 리랭킹으로 해결 불가**
 
-o4-mini 기준 Recall@5 성공(144개) 중 오답 비율 44.4%(64개). 주요 패턴:
-- 오답 거리 1(인접 선택지) 비율 48% — 완전히 엉뚱한 선택이 아닌 "그럴듯한 선택지" 사이의 판단 실패
+o4-mini 기준 Recall@5=True인데 오답인 64개를 gpt-4o-mini가 4가지 유형으로 분류:
+
+| 유형 | 건수 | 비율 | 설명 |
+|------|------|------|------|
+| Misinterpretation | 35 | 54.7% | 정답 판례를 읽었지만 법적 해석을 잘못함 |
+| Distraction | 29 | 45.3% | 유사 선택지 트랩에 걸려 판례 적용 실패 |
+| Noise Dominance | 0 | 0% | — |
+| Irrelevant | 0 | 0% | — |
+
+**핵심 시사점**: Noise Dominance = 0% → 판례 순위 문제가 아닌 추론 실패가 본질. Cross-Encoder 리랭킹으로 정답 판례를 top-1으로 올려도 Misinterpretation(54.7%)은 해결되지 않음. 법률 도메인 파인튜닝 또는 더 강한 추론 모델이 필요한 영역.
+
+추가 패턴:
+- 오답 거리 1(인접 선택지) 비율 48% — "그럴듯한 선택지" 사이의 판단 실패 (Distraction과 일치)
 - 5번 선택지 과소예측 — 정답이 5번인 16문제 중 7개만 5번으로 예측(44%), position bias 의심
-- Hybrid 전환 분석: 24개 새로 맞고 22개 새로 틀림, 전체 문제의 16%에서 답이 뒤바뀜. BM25 추가 판례의 컨텍스트 희석 효과 확인
+
+---
+
+## 에세이 평가 (KCL-Essay LLM-as-a-Judge)
+
+MCQA 외에 서술형 에세이 태스크(KCL-Essay, 169문제)에서도 3가지 세팅의 성능 차이를 측정함.
+gpt-4o-mini가 에세이를 생성하고, 동일한 gpt-4o-mini Judge가 3가지 기준(1~5점)으로 채점.
+
+| Setting | N | Legal Accuracy | Reasoning Quality | Citation Fidelity | Avg |
+|---------|---|:--------------:|:-----------------:|:-----------------:|:---:|
+| Vanilla | 169 | 3.09 | 3.19 | 2.18 | **2.82** |
+| Oracle | 169 | 3.98 | 3.79 | 3.83 | **3.87** |
+| Retrieved/bge-m3 | 169 | 3.24 | 3.30 | 2.78 | **3.11** |
+
+**Oracle vs Vanilla: +1.05점** — 판례 주입이 에세이 품질을 전반적으로 끌어올리며, 특히 Citation Fidelity 격차가 가장 큼(+1.65). 판례가 없으면 LLM이 판례 인용 자체를 회피하거나 환각함.
+
+**Retrieved vs Oracle: -0.76점 갭** — MCQA용 벡터 인덱스에는 짧게 추출된 판례 스니펫만 저장돼 있어, 풀텍스트 Oracle 대비 Citation Fidelity 격차가 두드러짐(2.78 vs 3.83). MCQA Accuracy 갭 패턴과 동일하게, Essay에서도 검색 품질이 인용 충실도를 제한함.
 
 ---
 
@@ -228,21 +255,25 @@ kcl-rag/
 │   │   ├── hyde_retriever.py  # HyDE 가상 판례 생성 + 검색
 │   │   └── hybrid_retriever.py # BM25 + 벡터 + RRF 결합
 │   └── evaluation/
-│       ├── _common.py         # LLM 호출, 파싱, DB 저장 공통 유틸
+│       ├── _common.py              # LLM 호출, 파싱, DB 저장 공통 유틸
 │       ├── vanilla.py
 │       ├── oracle.py
 │       ├── retrieved.py
-│       ├── hyde.py            # HyDE RAG 평가
-│       └── hybrid.py          # Hybrid RAG 평가
+│       ├── hyde.py                 # HyDE RAG 평가
+│       ├── hybrid.py               # Hybrid RAG 평가
+│       ├── judge_error_analysis.py # 오답 유형 분류 (LLM-as-a-Judge)
+│       └── essay_judge.py          # 에세이 생성 + Judge 채점
 ├── scripts/
 │   ├── 01_setup_db.sh
 │   ├── 02_index.py
 │   ├── 03_run_experiments.py
-│   ├── 04_analyze.py          # 결과 분석 + 시각화
-│   └── 05_run_search_experiments.py  # HyDE / Hybrid 실험
+│   ├── 04_analyze.py               # 결과 분석 + 시각화
+│   ├── 05_run_search_experiments.py # HyDE / Hybrid 실험
+│   ├── 06_judge_error_analysis.py  # 오답 분류 실행
+│   └── 07_run_essay_experiments.py # 에세이 Judge 실험 실행
 ├── docs/
-│   └── ERROR_ANALYSIS.md      # 오답 분석 리포트
-└── results/                   # 그래프 출력 디렉토리
+│   └── ERROR_ANALYSIS.md           # 오답 분석 + 에세이 결과 리포트
+└── results/                        # 그래프 출력 디렉토리
 ```
 
 ---
